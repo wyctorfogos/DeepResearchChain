@@ -3,11 +3,12 @@ import re
 from langchain_openai import ChatOpenAI
 from langchain.agents import initialize_agent
 from langchain.agents.agent_types import AgentType
-from langchain_community.tools import DuckDuckGoSearchRun
+from langchain.tools import Tool
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda
 from schemas.schemas import InputState, ListOfQuestions
+from utils.search import get_search_backend, SearchError
 
 from dotenv import load_dotenv
 load_dotenv("./config/.env")
@@ -22,6 +23,16 @@ Responda SOMENTE com JSON valido, sem nenhum texto ao redor, no formato:
 {{"ListOfQueries": [{{"id": 1, "pergunta": "..."}}]}}
 
 Pergunta: {query}{think_flag}"""
+
+ANSWER_TEMPLATE = """Responda a pergunta usando SOMENTE os trechos abaixo.
+Nao complete com conhecimento proprio. Se os trechos nao respondem a pergunta, \
+diga exatamente: NAO ENCONTRADO NAS FONTES.
+Cite o titulo da fonte entre colchetes ao afirmar cada fato.
+
+Trechos:
+{evidencia}
+
+Pergunta: {pergunta}{think_flag}"""
 
 SYNTHESIS_TEMPLATE = """Voce e um redator de pesquisa. Abaixo estao sub-perguntas e o que \
 foi apurado para cada uma.
@@ -42,20 +53,27 @@ class DeepResearchAgent:
             ipaddress_hostname:str="http://localhost:11434/",
             temperature:float=0.1,
             enable_thinking:bool=False,
-            max_subquestions:int=5
+            max_subquestions:int=5,
+            search_backend:str=None,
+            use_agent:bool=False
         ):
         self.model_name=model_name
         self.ipaddress_hostname=ipaddress_hostname
         self.temperature=temperature
         self.enable_thinking=enable_thinking
         self.max_subquestions=max_subquestions
+        # use_agent=True devolve a decisao de buscar ao LLM. Neste modelo isso
+        # significa nao buscar nunca (0 tool calls medidas), entao o padrao e a
+        # recuperacao deterministica: o codigo busca, o LLM so resume.
+        self.use_agent=use_agent
 
-        # Chain para planejar (sem tools) e chain para redigir (sem tools).
+        self.search_tool = get_search_backend(search_backend)
+
+        # Chains sem tools: planejar, responder ancorado, redigir.
         self.planner_chain = self.build_planner_chain()
+        self.answer_chain = self.build_answer_chain()
         self.synthesis_chain = self.build_synthesis_chain()
-        # Agente so para responder cada sub-pergunta - e a unica etapa que precisa
-        # decidir sobre ferramentas.
-        self.agente = self.initialize_agent_model()
+        self.agente = self.initialize_agent_model() if use_agent else None
 
     # ------------------------------------------------------------------ infra
 
@@ -102,6 +120,13 @@ class DeepResearchAgent:
             | parse
         )
 
+    def build_answer_chain(self):
+        return (
+            ChatPromptTemplate.from_template(ANSWER_TEMPLATE)
+            | self.build_llm()
+            | StrOutputParser()
+        )
+
     def build_synthesis_chain(self):
         return (
             ChatPromptTemplate.from_template(SYNTHESIS_TEMPLATE)
@@ -111,8 +136,12 @@ class DeepResearchAgent:
 
     def initialize_agent_model(self):
         try:
-            # Websearch da informações requeridas
-            search_tool = DuckDuckGoSearchRun()
+            # O agente usa o mesmo backend plugavel, embrulhado como Tool.
+            search_tool = Tool(
+                name="web_search",
+                func=self.search_tool.run,
+                description="Busca informacao factual na web. Entrada: uma pergunta.",
+            )
 
             # OPENAI_FUNCTIONS usa tool calling nativo. O ReAct textual
             # (ZERO_SHOT_REACT_DESCRIPTION) faz o modelo 4B girar ate o limite
@@ -144,8 +173,28 @@ class DeepResearchAgent:
     def answer_subquestion(self, subpergunta):
         # Uma sub-pergunta que falha nao derruba a pesquisa inteira - a etapa de
         # sintese e instruida a tratar isso como "nao verificado".
+        if self.use_agent:
+            try:
+                return self.agente.run(subpergunta.pergunta + self.think_flag)
+            except Exception as e:
+                return f"[nao foi possivel apurar: {e}]"
+
+        # Quem decide buscar e o codigo, nao o LLM - e so assim a evidencia
+        # entra de fato no contexto.
         try:
-            return self.agente.run(subpergunta.pergunta + self.think_flag)
+            evidencia = self.search_tool.run(subpergunta.pergunta)
+        except SearchError as e:
+            return f"[nao foi possivel apurar: {e}]"
+        if not evidencia.strip():
+            return "[nao foi possivel apurar: busca sem resultados]"
+
+        print(f"    ({self.search_tool.name}: {len(evidencia)} chars recuperados)")
+        try:
+            return self.answer_chain.invoke({
+                "evidencia": evidencia,
+                "pergunta": subpergunta.pergunta,
+                "think_flag": self.think_flag,
+            })
         except Exception as e:
             return f"[nao foi possivel apurar: {e}]"
 
