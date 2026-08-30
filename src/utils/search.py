@@ -1,12 +1,5 @@
-"""Backends de busca plugaveis.
-
-Cada backend expoe:
-  .name
-  .search(query) -> [{"title", "url", "text"}]   resultados estruturados
-  .run(query)    -> str                          mesmos dados, ja formatados
-
-search() e o que o pipeline usa, porque filtrar relevancia exige os trechos
-separados. run() existe para embrulhar o backend como Tool do LangChain.
+"""
+    Backends de busca plugaveis.
 """
 from __future__ import annotations
 
@@ -26,10 +19,8 @@ def format_results(results):
 
 
 class WikipediaSearch:
-    """MediaWiki API. Sem chave e sem dependencia extra (usa requests).
-
-    Cobertura limitada: so a introducao do artigo, so no idioma escolhido.
-    Serve para perguntas enciclopedicas, nao para deep research de verdade.
+    """
+        MediaWiki API. Sem chave e sem dependencia extra (usa requests).
     """
 
     name = "wikipedia"
@@ -88,15 +79,8 @@ class WikipediaSearch:
 
 
 class DuckDuckGoSearch:
-    """Busca web aberta via ddgs. Sem chave. Sujeita a rate limit (202) sem proxy.
-
-    Usa DuckDuckGoSearchResults com output_format="list" para obter fontes
-    SEPARADAS (title/link/snippet). O DuckDuckGoSearchRun devolve um blob unico,
-    o que quebra tanto o filtro de relevancia (pontua 1 item gigante em vez de N)
-    quanto as citacoes (toda fonte viraria "[duckduckgo]").
-
-    Limitacao real: os snippets sao curtos (1-2 frases por fonte). Evidencia mais
-    rala => resposta mais rala. Para deep research serio, Tavily e melhor.
+    """
+        Busca web aberta via ddgs. Sem chave. Sujeita a rate limit (202) sem proxy.
     """
 
     name = "duckduckgo"
@@ -177,12 +161,8 @@ BACKENDS = {
 
 
 def get_search_backend(name=None):
-    """Resolve o backend por nome, por SEARCH_BACKEND, ou usa duckduckgo.
-
-    O padrao e duckduckgo (busca web) e nao wikipedia: um sistema de research
-    que so consulta a introducao de artigos da Wikipedia PT nao pesquisa a web,
-    e o sintoma disso ("nenhuma fonte relevante" para tudo) parece bug de
-    pipeline quando na verdade e falta de cobertura do backend.
+    """
+        Resolve o backend por nome, por SEARCH_BACKEND, ou usa duckduckgo.
     """
     name = (name or os.getenv("SEARCH_BACKEND") or "duckduckgo").lower()
     if name not in BACKENDS:

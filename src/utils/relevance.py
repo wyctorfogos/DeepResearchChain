@@ -1,17 +1,9 @@
-"""Filtro de relevancia lexico entre a sub-pergunta e os trechos recuperados.
-
-Motivacao: a busca sempre casa alguma coisa - a Wikipedia nunca devolve vazio.
-Sem um portao, cada sub-pergunta gasta uma chamada de LLM para processar texto
-plausivel porem inutil. Aqui o descarte e deterministico e nao custa tokens.
-
-O escore e a cobertura dos termos de conteudo da pergunta pelo trecho:
-    score = |termos_da_pergunta ∩ termos_do_trecho| / |termos_da_pergunta|
+"""
+    Filtro de relevancia lexico entre a sub-pergunta e os trechos recuperados.
 """
 import re
 import unicodedata
 
-# Palavras funcionais nao discriminam relevancia - "qual", "the", "de" casam
-# com qualquer documento e inflariam o escore.
 STOPWORDS = {
     # portugues
     "a", "ao", "aos", "as", "com", "como", "da", "das", "de", "do", "dos", "e",
