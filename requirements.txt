@@ -1,0 +1,17 @@
+# Python 3.10+
+langchain-openai>=1.0
+langchain-core>=1.0
+langgraph>=1.0
+pydantic>=2.0
+python-dotenv>=1.0
+requests>=2.31
+
+# Backend de busca padrao (duckduckgo)
+ddgs
+langchain-community
+
+# Backend tavily (opcional; exige TAVILY_API_KEY)
+tavily-python
+
+# Testes
+pytest>=8

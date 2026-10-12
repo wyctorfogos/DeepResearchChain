@@ -1,6 +1,4 @@
-"""
-    Filtro de relevancia lexico entre a sub-pergunta e os trechos recuperados.
-"""
+
 import re
 import unicodedata
 
@@ -21,6 +19,35 @@ STOPWORDS = {
 }
 
 MIN_TERM_LEN = 3
+MIN_STEM_LEN = 4
+
+# Sufixos (sem acento) do mais longo ao mais curto. Radical minimo de 4 letras
+# evita estragar palavras curtas. Stemmer leve e propositalmente conservador:
+# o objetivo e casar flexoes ("escritos"/"escrito", "fundacao"/"fundacoes"),
+# nao fazer analise morfologica.
+SUFFIXES = sorted([
+    # portugues
+    "amentos", "imentos", "amento", "imento", "adores", "acoes", "icoes",
+    "idades", "mente", "ismos", "istas", "ador", "coes", "cao", "oes", "ismo",
+    "ista", "idade", "ados", "adas", "idos", "idas", "ado", "ada", "ido",
+    "ida", "ais", "eis", "es", "as", "os",
+    # ingles
+    "ations", "ation", "ings", "ing", "ies", "ed", "ly",
+    # plural generico
+    "s",
+], key=len, reverse=True)
+
+
+def stem(token):
+    """Remove o primeiro sufixo conhecido e a vogal final (a/e/o), sempre
+    mantendo um radical >= MIN_STEM_LEN."""
+    for suf in SUFFIXES:
+        if token.endswith(suf) and len(token) - len(suf) >= MIN_STEM_LEN:
+            token = token[: -len(suf)]
+            break
+    if token[-1:] in ("a", "e", "o") and len(token) - 1 >= MIN_STEM_LEN:
+        token = token[:-1]
+    return token
 
 
 def normalize(text):
@@ -31,10 +58,10 @@ def normalize(text):
 
 
 def content_terms(text):
-    """Termos de conteudo: sem acento, sem stopword, sem token curto."""
+    """Termos de conteudo: sem acento, sem stopword, sem token curto, em radical."""
     tokens = re.findall(r"[a-z0-9]+", normalize(text))
     return {
-        t for t in tokens
+        stem(t) for t in tokens
         if len(t) >= MIN_TERM_LEN and t not in STOPWORDS
     }
 

@@ -20,3 +20,10 @@ class SubPerguntas(BaseModel):
 class ListOfQuestions(BaseModel):
     """Decomposicao de uma pergunta ampla em sub-perguntas de pesquisa."""
     ListOfQueries:List[SubPerguntas] = Field(description="As sub-perguntas geradas")
+
+
+class Avaliacao(BaseModel):
+    """Veredito do avaliador sobre o que foi apurado ate agora."""
+    suficiente: bool
+    novas_perguntas: List[str] = Field(default_factory=list)
+    motivo: str = ""

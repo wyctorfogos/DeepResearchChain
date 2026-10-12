@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deep-research"
+version = "0.2.0"
+description = "Agente de deep research local (Ollama + LangGraph) com busca na web e respostas citando fontes"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-openai>=1.0",
+    "langchain-core>=1.0",
+    "langgraph>=1.0",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+duckduckgo = ["ddgs", "langchain-community"]
+tavily = ["tavily-python"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+deep-research = "main:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+py-modules = ["main", "graph"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

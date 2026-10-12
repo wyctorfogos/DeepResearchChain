@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
+
 import requests
 
 
@@ -25,19 +28,29 @@ class WikipediaSearch:
 
     name = "wikipedia"
 
-    def __init__(self, lang="pt", max_results=3, chars_per_page=1200, timeout=15):
+    def __init__(self, lang=None, max_results=3, chars_per_page=1200, timeout=15):
+        lang = lang or os.getenv("WIKIPEDIA_LANG", "pt")
         self.endpoint = f"https://{lang}.wikipedia.org/w/api.php"
         self.max_results = max_results
         self.chars_per_page = chars_per_page
         self.timeout = timeout
         self.lang = lang
 
-    def _get(self, params):
+    def _get(self, params, retries=5):
         params["format"] = "json"
-        r = requests.get(self.endpoint, params=params, timeout=self.timeout,
-                         headers={"User-Agent": "deep-research/0.1"})
-        r.raise_for_status()
-        return r.json()
+        for tentativa in range(retries):
+            r = requests.get(self.endpoint, params=params, timeout=self.timeout,
+                             headers={"User-Agent": "deep-research/0.1"})
+            # 429: rate limit da Wikipedia (comum com sub-perguntas em paralelo).
+            if r.status_code == 429 and tentativa < retries - 1:
+                try:
+                    espera = float(r.headers.get("Retry-After", ""))
+                except ValueError:
+                    espera = 2.0 * (tentativa + 1)
+                time.sleep(min(espera, 10.0))
+                continue
+            r.raise_for_status()
+            return r.json()
 
     def search(self, query):
         try:
@@ -160,13 +173,63 @@ BACKENDS = {
 }
 
 
-def get_search_backend(name=None):
+class CachedSearch:
+    """Cache em memoria (com TTL) sobre qualquer backend.
+
+    Evita repetir consultas identicas entre rodadas e reduz o risco de rate limit
+    (ex.: 429 da Wikipedia). Erros nunca sao cacheados; resultados vazios sim.
+    """
+
+    def __init__(self, backend, ttl=3600.0, max_entries=256):
+        self._backend = backend
+        self.name = backend.name
+        self.ttl = ttl
+        self.max_entries = max_entries
+        self.hits = 0
+        self.misses = 0
+        self._store = {}
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _key(query):
+        return " ".join((query or "").lower().split())
+
+    def search(self, query):
+        key = self._key(query)
+        now = time.monotonic()
+        with self._lock:
+            entry = self._store.get(key)
+            if entry and now - entry[0] < self.ttl:
+                self.hits += 1
+                return [dict(r) for r in entry[1]]
+            self.misses += 1
+        results = self._backend.search(query)
+        with self._lock:
+            if len(self._store) >= self.max_entries:
+                oldest = min(self._store, key=lambda k: self._store[k][0])
+                del self._store[oldest]
+            self._store[key] = (now, [dict(r) for r in results])
+        return results
+
+    def run(self, query):
+        return format_results(self.search(query))
+
+    def clear(self):
+        with self._lock:
+            self._store.clear()
+
+
+def get_search_backend(name=None, cache=True):
     """
         Resolve o backend por nome, por SEARCH_BACKEND, ou usa duckduckgo.
+        Por padrao devolve o backend embrulhado em CachedSearch.
     """
     name = (name or os.getenv("SEARCH_BACKEND") or "duckduckgo").lower()
     if name not in BACKENDS:
         raise SearchError(
             f"backend '{name}' desconhecido. Opcoes: {', '.join(BACKENDS)}"
         )
-    return BACKENDS[name]()
+    backend = BACKENDS[name]()
+    if not cache:
+        return backend
+    return CachedSearch(backend, ttl=float(os.getenv("SEARCH_CACHE_TTL", "3600")))

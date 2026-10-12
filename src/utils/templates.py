@@ -67,6 +67,23 @@ Pergunta original: {query}
 Apurado:
 {findings}{think_flag}"""
 
+EVALUATE_TEMPLATE = """Voce avalia se o material apurado e suficiente para responder a pergunta \
+original.
+
+Considere insuficiente APENAS se houver uma lacuna importante que uma nova busca web \
+poderia preencher: itens marcados com "nao foi possivel apurar", ou aspectos centrais da \
+pergunta original que nenhuma sub-pergunta cobriu. Se for insuficiente, proponha ate \
+{max_novas} novas sub-perguntas objetivas e autocontidas, diferentes das ja feitas \
+(reformule termos de busca que falharam). Na duvida, marque suficiente.
+
+Responda SOMENTE com JSON valido, sem texto ao redor:
+{{"suficiente": true, "novas_perguntas": [], "motivo": "..."}}
+
+Pergunta original: {query}
+
+Sub-perguntas ja feitas e o que foi apurado:
+{findings}{think_flag}"""
+
 # Prefixo das respostas geradas sem consulta a fontes. A sintese usa isso para
 # distinguir o que tem lastro externo do que veio do conhecimento do modelo.
 SEM_FONTE = "[sem fonte externa]"
